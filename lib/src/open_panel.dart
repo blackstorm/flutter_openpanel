@@ -50,8 +50,10 @@ class Openpanel {
       await _preferences.persistState(_state);
     }
 
-    _http = OpenpanelHttpClient();
-    _http.init(options: options, userAgent: device.userAgent);
+    _http = OpenpanelHttpClient(
+      options: options,
+      userAgent: device.userAgent,
+    );
 
     WidgetsBinding.instance.addObserver(ReferrerObserver());
     _ready = true;
@@ -94,15 +96,12 @@ class Openpanel {
     required int value,
     OpenpanelEventOptions? eventOptions,
   }) {
-    _run(() {
-      final profileId = eventOptions?.profileId ?? _state.profileId;
-      if (profileId == null) return;
-      _http.increment(
-        profileId: profileId,
-        property: property,
-        value: value,
-      );
-    });
+    _adjustProperty(
+      property: property,
+      value: value,
+      eventOptions: eventOptions,
+      send: _http.increment,
+    );
   }
 
   void decrement({
@@ -110,15 +109,12 @@ class Openpanel {
     required int value,
     OpenpanelEventOptions? eventOptions,
   }) {
-    _run(() {
-      final profileId = eventOptions?.profileId ?? _state.profileId;
-      if (profileId == null) return;
-      _http.decrement(
-        profileId: profileId,
-        property: property,
-        value: value,
-      );
-    });
+    _adjustProperty(
+      property: property,
+      value: value,
+      eventOptions: eventOptions,
+      send: _http.decrement,
+    );
   }
 
   void event({
@@ -126,29 +122,52 @@ class Openpanel {
     Map<String, dynamic> properties = const {},
   }) {
     _run(() {
-      final profileId = properties['profileId'] ?? _state.profileId;
-      final props = Map<String, dynamic>.from(_state.properties);
-      properties.forEach((key, value) {
-        if (key != 'profileId') props[key] = value;
-      });
+      final profileId =
+          properties['profileId'] as String? ?? _state.profileId;
+      final eventProperties = Map<String, dynamic>.from(properties)
+        ..remove('profileId');
 
       unawaited(
-        _http
-            .event(
-          payload: PostEventPayload(
+        _track(
+          PostEventPayload(
             name: name,
             timestamp: DateTime.timestamp().toIso8601String(),
             deviceId: _state.deviceId,
-            profileId: profileId is String ? profileId : profileId?.toString(),
-            properties: props,
+            profileId: profileId,
+            properties: {
+              ..._state.properties,
+              ...eventProperties,
+            },
           ),
-        )
-            .catchError((Object error, StackTrace stack) {
-          if (options.verbose) {
-            debugPrint('[openpanel] track failed: $error\n$stack');
-          }
-        }),
+        ),
       );
+    });
+  }
+
+  Future<void> _track(PostEventPayload payload) async {
+    try {
+      await _http.event(payload: payload);
+    } catch (error, stack) {
+      if (options.verbose) {
+        debugPrint('[openpanel] track failed: $error\n$stack');
+      }
+    }
+  }
+
+  void _adjustProperty({
+    required String property,
+    required int value,
+    required OpenpanelEventOptions? eventOptions,
+    required void Function({
+      required String profileId,
+      required String property,
+      required int value,
+    }) send,
+  }) {
+    _run(() {
+      final profileId = eventOptions?.profileId ?? _state.profileId;
+      if (profileId == null) return;
+      send(profileId: profileId, property: property, value: value);
     });
   }
 

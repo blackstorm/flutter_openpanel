@@ -11,7 +11,7 @@ void main() {
   group('OpenpanelHttpClient.event', () {
     test('accepts a JSON object response body', () async {
       var posts = 0;
-      final client = MockClient((request) async {
+      final client = _client((request) async {
         posts += 1;
         expect(request.url.path, endsWith('/track'));
         expect(jsonDecode(request.body), isA<Map<String, dynamic>>());
@@ -22,75 +22,71 @@ void main() {
         );
       });
 
-      final httpClient = OpenpanelHttpClient(client: client, maxAttempts: 1);
-      httpClient.init(
-        options: const OpenpanelOptions(
-          url: 'http://localhost',
-          clientId: 'test-client',
-          clientSecret: 'test-secret',
-        ),
-        userAgent: 'test/1.0',
-      );
-
-      await httpClient.event(
-        payload: PostEventPayload(
-          name: 'test_event',
-          timestamp: DateTime.utc(2026).toIso8601String(),
-        ),
-      );
-
+      await client.event(payload: _payload());
       expect(posts, 1);
-      httpClient.dispose();
+      client.dispose();
     });
 
     test('accepts a plain string response body', () async {
-      final client = MockClient(
-        (_) async => http.Response('"ok"', 200),
-      );
-      final httpClient = OpenpanelHttpClient(client: client, maxAttempts: 1);
-      httpClient.init(
-        options: const OpenpanelOptions(
-          url: 'http://localhost',
-          clientId: 'test-client',
-        ),
-        userAgent: 'test/1.0',
-      );
-
-      await expectLater(
-        httpClient.event(
-          payload: PostEventPayload(
-            name: 'test_event',
-            timestamp: DateTime.utc(2026).toIso8601String(),
-          ),
-        ),
-        completes,
-      );
-      httpClient.dispose();
+      final client = _client((_) async => http.Response('"ok"', 200));
+      await expectLater(client.event(payload: _payload()), completes);
+      client.dispose();
     });
 
     test('retries then gives up without throwing', () async {
       var posts = 0;
-      final client = MockClient((_) async {
-        posts += 1;
-        return http.Response('nope', 500);
-      });
-      final httpClient = OpenpanelHttpClient(client: client, maxAttempts: 3);
-      httpClient.init(
+      final client = _client(
+        (_) async {
+          posts += 1;
+          return http.Response('nope', 500);
+        },
+        maxAttempts: 3,
+      );
+
+      await client.event(payload: _payload());
+      expect(posts, 3);
+      client.dispose();
+    });
+
+    test('strips trailing slash from base url', () async {
+      late Uri posted;
+      final client = OpenpanelHttpClient(
         options: const OpenpanelOptions(
-          url: 'http://localhost',
+          url: 'http://localhost/api/',
           clientId: 'test-client',
         ),
         userAgent: 'test/1.0',
+        maxAttempts: 1,
+        client: MockClient((request) async {
+          posted = request.url;
+          return http.Response('{}', 200);
+        }),
       );
 
-      await httpClient.event(
-        payload: PostEventPayload(
-          name: 'test_event',
-          timestamp: DateTime.utc(2026).toIso8601String(),
-        ),
-      );
-      expect(posts, 3);
-      httpClient.dispose();
+      await client.event(payload: _payload());
+      expect(posted.toString(), 'http://localhost/api/track');
+      client.dispose();
     });
   });
+}
+
+PostEventPayload _payload() => PostEventPayload(
+      name: 'test_event',
+      timestamp: DateTime.utc(2026).toIso8601String(),
+    );
+
+OpenpanelHttpClient _client(
+  Future<http.Response> Function(http.Request request) handler, {
+  int maxAttempts = 1,
+}) {
+  return OpenpanelHttpClient(
+    options: const OpenpanelOptions(
+      url: 'http://localhost',
+      clientId: 'test-client',
+      clientSecret: 'test-secret',
+    ),
+    userAgent: 'test/1.0',
+    maxAttempts: maxAttempts,
+    client: MockClient(handler),
+  );
 }

@@ -26,13 +26,13 @@ class ReferrerObserver with WidgetsBindingObserver {
     }
 
     try {
-      final info = await r.Referrer().getReferrer();
-      final value = info?.referrer;
-      if (value != null) {
-        Openpanel.instance.setGlobalProperties({'__referrer': value.toString()});
+      final referrer = (await r.Referrer().getReferrer())?.referrer;
+      if (referrer != null) {
+        Openpanel.instance
+            .setGlobalProperties({'__referrer': referrer.toString()});
       }
     } catch (_) {
-      // Referrer is best-effort.
+      // Best-effort only.
     }
   }
 }
