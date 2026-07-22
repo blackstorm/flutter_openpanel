@@ -4,22 +4,20 @@ import 'package:openpanel_flutter/src/models/open_panel_state.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 final class PreferencesService {
-  final SharedPreferences _sharedPreferences;
+  PreferencesService(this._prefs);
 
-  PreferencesService(this._sharedPreferences);
-
-  Future<void> persistState(OpenpanelState state) async {
-    final jsonString = jsonEncode(state.toJson());
-    await _sharedPreferences.setString(_key, jsonString);
-  }
-
-  Future<OpenpanelState?> getSavedState() async {
-    final jsonString = _sharedPreferences.getString(_key);
-    if (jsonString == null) {
-      return null;
-    }
-    return OpenpanelState.fromJson(jsonDecode(jsonString));
-  }
-
+  final SharedPreferences _prefs;
   static const _key = 'openpanel_state';
+
+  Future<void> persistState(OpenpanelState state) {
+    return _prefs.setString(_key, jsonEncode(state.toJson()));
+  }
+
+  OpenpanelState? getSavedState() {
+    final raw = _prefs.getString(_key);
+    if (raw == null) return null;
+    return OpenpanelState.fromJson(
+      jsonDecode(raw) as Map<String, dynamic>,
+    );
+  }
 }

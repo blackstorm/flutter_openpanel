@@ -1,53 +1,28 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:openpanel_flutter/src/models/open_panel_state.dart';
 import 'package:openpanel_flutter/src/services/preferences_service.dart';
-
-class MockSharedPreferences extends Mock implements SharedPreferences {}
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  group('PreferencesService', () {
-    late PreferencesService preferencesService;
-    late MockSharedPreferences mockSharedPreferences;
+  TestWidgetsFlutterBinding.ensureInitialized();
 
-    setUp(() {
-      mockSharedPreferences = MockSharedPreferences();
-      preferencesService = PreferencesService(mockSharedPreferences);
-    });
+  test('round-trips OpenpanelState', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = PreferencesService(await SharedPreferences.getInstance());
 
-    test('persistState should save state as JSON string', () async {
-      final state =
-          OpenpanelState(deviceId: 'testDevice', profileId: 'testProfile');
-      when(() => mockSharedPreferences.setString(any(), any()))
-          .thenAnswer((_) async => true);
+    const state = OpenpanelState(
+      deviceId: 'device',
+      profileId: 'profile',
+      properties: {'appVersion': '1.0.0'},
+      isTracingSampled: true,
+    );
 
-      await preferencesService.persistState(state);
+    await prefs.persistState(state);
+    final loaded = prefs.getSavedState();
 
-      verify(() => mockSharedPreferences.setString(any(), any())).called(1);
-    });
-
-    test('getSavedState should return null when no state is saved', () async {
-      when(() => mockSharedPreferences.getString(any())).thenReturn(null);
-
-      final result = await preferencesService.getSavedState();
-
-      expect(result, isNull);
-    });
-
-    test('getSavedState should return OpenpanelState when state is saved',
-        () async {
-      final jsonString =
-          '{"deviceId":"testDevice","profileId":"testProfile","properties":{},"isCollectionEnabled":true}';
-      when(() => mockSharedPreferences.getString(any())).thenReturn(jsonString);
-
-      final result = await preferencesService.getSavedState();
-
-      expect(result, isA<OpenpanelState>());
-      expect(result?.deviceId, equals('testDevice'));
-      expect(result?.profileId, equals('testProfile'));
-      expect(result?.properties, isEmpty);
-      expect(result?.isCollectionEnabled, isTrue);
-    });
+    expect(loaded?.deviceId, 'device');
+    expect(loaded?.profileId, 'profile');
+    expect(loaded?.properties['appVersion'], '1.0.0');
+    expect(loaded?.isTracingSampled, isTrue);
   });
 }

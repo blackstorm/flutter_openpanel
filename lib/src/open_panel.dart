@@ -1,153 +1,103 @@
+import 'dart:async';
 import 'dart:math';
 
-import 'package:device_info_plus/device_info_plus.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
-import 'package:logger/web.dart';
-
+import 'package:flutter/widgets.dart';
 import 'package:openpanel_flutter/src/models/open_panel_event_options.dart';
 import 'package:openpanel_flutter/src/models/open_panel_options.dart';
 import 'package:openpanel_flutter/src/models/open_panel_state.dart';
 import 'package:openpanel_flutter/src/models/post_event_payload.dart';
 import 'package:openpanel_flutter/src/models/update_profile_payload.dart';
 import 'package:openpanel_flutter/src/observers/referrer_observer.dart';
+import 'package:openpanel_flutter/src/services/device_context.dart';
 import 'package:openpanel_flutter/src/services/openpanel_http_client.dart';
 import 'package:openpanel_flutter/src/services/preferences_service.dart';
-import 'package:package_info_plus/package_info_plus.dart';
+import 'package:openpanel_flutter/src/utils/uuid.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:uuid/uuid.dart';
 
 class Openpanel {
-  /// Openpanel instance
-  ///
-  /// Example:
-  /// ```dart
-  /// Openpanel.instance.event(name: 'screen_view', properties: {
-  ///   'my_event': eventName,
-  ///})
-  ///```
-  static final Openpanel instance = Openpanel._internal();
+  Openpanel._();
+
+  static final Openpanel instance = Openpanel._();
 
   factory Openpanel() => instance;
 
-  Openpanel._internal();
-
-  final Logger _logger = Logger();
-
   late final OpenpanelOptions options;
-  late final PreferencesService _preferencesService;
+  late final PreferencesService _preferences;
+  late final OpenpanelHttpClient _http;
 
-  late final OpenpanelHttpClient _httpClient;
-
-  bool _isClientInitialised = false;
-
+  bool _ready = false;
   OpenpanelState _state = const OpenpanelState();
 
-  /// Initialise Openpanel.
-  /// This must be called before using Openpanel.
-  ///
-  ///  - [options]
-  ///    - [url] - Openpanel url
-  ///    - [clientId] - Openpanel client id
-  ///    - [clientSecret] - Openpanel client secret
-  ///    - [verbose] - Enable verbose logging
-  ///
-  /// Example:
-  /// ```dart
-  /// Openpanel.instance.initialize(
-  ///   options: OpenpanelOptions(
-  ///     url: <YOUR_OPENPANEL_URL>, // optional
-  ///     clientId: <YOUR_CLIENT_ID>,
-  ///     clientSecret: <YOUR_CLIENT_SECRET>,
-  ///     verbose: true, // optional, defaults to false
-  ///   ),
-  ///)
-  ///```
   Future<void> initialize({required OpenpanelOptions options}) async {
-    if (_isClientInitialised) {
-      return;
-    }
+    if (_ready) return;
     this.options = options;
 
-    _preferencesService =
-        PreferencesService(await SharedPreferences.getInstance());
+    _preferences = PreferencesService(await SharedPreferences.getInstance());
+    final saved = _preferences.getSavedState();
+    final device = await DeviceContext.collect();
 
-    final OpenpanelState? savedState =
-        await _preferencesService.getSavedState();
-    if (savedState != null) {
-      _state = savedState;
+    if (saved != null) {
+      _state = saved;
     } else {
-      final deviceData = await _getTrackedDeviceData();
-
-      double rate = options.tracingSampleRate;
-      bool sampled = rate >= 1.0 || Random().nextDouble() < rate;
-
-      if (deviceData.isNotEmpty) {
-        setGlobalProperties(deviceData);
-        _state = _state.copyWith(
-          profileId: const Uuid().v4(),
-          deviceId: deviceData['deviceId'] ?? const Uuid().v4(),
-          isTracingSampled: sampled,
-        );
-      } else {
-        _state = _state.copyWith(isTracingSampled: sampled);
-      }
-
-      _preferencesService.persistState(_state);
+      final rate = options.tracingSampleRate;
+      final sampled = rate >= 1.0 || Random().nextDouble() < rate;
+      _state = OpenpanelState(
+        profileId: newUuidV4(),
+        deviceId: device.properties['deviceId'] as String? ?? newUuidV4(),
+        properties: Map<String, dynamic>.from(device.properties),
+        isTracingSampled: sampled,
+      );
+      await _preferences.persistState(_state);
     }
-    // HTTP CLient
 
-    _httpClient = OpenpanelHttpClient(
-      verbose: options.verbose,
-      logger: _logger,
-    );
-
-    await _httpClient.init(options);
+    _http = OpenpanelHttpClient();
+    _http.init(options: options, userAgent: device.userAgent);
 
     WidgetsBinding.instance.addObserver(ReferrerObserver());
-
-    _isClientInitialised = true;
+    _ready = true;
   }
 
-  /// Enable or disable collection. Enabled by default.
-  void setCollectionEnabled(bool enabled) =>
-      _state = _state.copyWith(isCollectionEnabled: enabled);
+  void setCollectionEnabled(bool enabled) {
+    _mutate(_state.copyWith(isCollectionEnabled: enabled));
+  }
 
-  /// Set profile id
-  ///
-  /// Profile ids are automatically generated if not set and never change unless you
-  /// call [clear] to reset them, use this method or reinstall the app.
-  void setProfileId(String profileId) =>
-      _state = _state.copyWith(profileId: profileId);
+  void setProfileId(String profileId) {
+    _mutate(_state.copyWith(profileId: profileId));
+  }
 
-  /// Update profile
-  ///
-  /// Update an existing profile to add additional infos
+  void setGlobalProperties(Map<String, dynamic> properties) {
+    _mutate(
+      _state.copyWith(properties: {
+        ..._state.properties,
+        ...properties,
+      }),
+    );
+  }
+
+  Future<void> clear() async {
+    _state = const OpenpanelState();
+    await _preferences.persistState(_state);
+  }
+
   void updateProfile({required UpdateProfilePayload payload}) {
-    _execute(() {
+    _run(() {
       setProfileId(payload.profileId);
-      _httpClient.updateProfile(
+      _http.updateProfile(
         payload: payload,
         stateProperties: _state.properties,
       );
     });
   }
 
-  /// Increment a property.
-  ///
-  /// Ex. You may want to increment the amount of time a user opened the app
   void increment({
     required String property,
     required int value,
     OpenpanelEventOptions? eventOptions,
   }) {
-    _execute(() {
+    _run(() {
       final profileId = eventOptions?.profileId ?? _state.profileId;
-      if (profileId == null) {
-        return;
-      }
-
-      _httpClient.increment(
+      if (profileId == null) return;
+      _http.increment(
         profileId: profileId,
         property: property,
         value: value,
@@ -155,21 +105,15 @@ class Openpanel {
     });
   }
 
-  /// Decrement property
-  ///
-  /// Ex. Decrease the number of credits the user has
   void decrement({
     required String property,
     required int value,
     OpenpanelEventOptions? eventOptions,
   }) {
-    _execute(() {
+    _run(() {
       final profileId = eventOptions?.profileId ?? _state.profileId;
-      if (profileId == null) {
-        return;
-      }
-
-      _httpClient.decrement(
+      if (profileId == null) return;
+      _http.decrement(
         profileId: profileId,
         property: property,
         value: value,
@@ -177,94 +121,49 @@ class Openpanel {
     });
   }
 
-  /// Send an event
-  ///
-  /// You can send events with any name and any properties. By default, the device
-  /// infos such as id, branch, model, etc... will be sent.
   void event({
     required String name,
     Map<String, dynamic> properties = const {},
   }) {
-    _execute(() async {
+    _run(() {
       final profileId = properties['profileId'] ?? _state.profileId;
+      final props = Map<String, dynamic>.from(_state.properties);
+      properties.forEach((key, value) {
+        if (key != 'profileId') props[key] = value;
+      });
 
-      _httpClient.event(
-        payload: PostEventPayload(
-          name: name,
-          timestamp: DateTime.timestamp().toIso8601String(),
-          deviceId: _state.deviceId,
-          properties: {
-            ..._state.properties,
-            ...{...properties}..removeWhere((key, value) => key == 'profileId'),
-          },
-          profileId: profileId,
-        ),
+      unawaited(
+        _http
+            .event(
+          payload: PostEventPayload(
+            name: name,
+            timestamp: DateTime.timestamp().toIso8601String(),
+            deviceId: _state.deviceId,
+            profileId: profileId is String ? profileId : profileId?.toString(),
+            properties: props,
+          ),
+        )
+            .catchError((Object error, StackTrace stack) {
+          if (options.verbose) {
+            debugPrint('[openpanel] track failed: $error\n$stack');
+          }
+        }),
       );
     });
   }
 
-  /// Set global properties
-  /// These properties will be sent every time an event is sent
-  void setGlobalProperties(Map<String, dynamic> properties) {
-    _state = _state.copyWith(properties: {
-      ..._state.properties,
-      ...properties,
-    });
-  }
-
-  /// Clear all properties
-  /// Use this method if you want to reset the global properties
-  Future<void> clear() async {
-    _state = const OpenpanelState();
-    await _preferencesService.persistState(_state);
-  }
-
-  void _execute<T>(T Function() action) {
-    if (!_isClientInitialised) {
-      throw Exception(
-          'Openpanel is not initialised. You must initialize Openpanel before using Openpanel.instance.');
+  void _run(void Function() action) {
+    if (!_ready) {
+      throw StateError(
+        'Openpanel is not initialised. Call Openpanel.instance.initialize first.',
+      );
     }
-
-    if (!_state.isCollectionEnabled) {
-      return;
-    }
-
-    if (!_state.isTracingSampled) return;
-
+    if (!_state.isCollectionEnabled || !_state.isTracingSampled) return;
     action();
-
-    _preferencesService.persistState(_state);
   }
 
-  Future<Map<String, dynamic>> _getTrackedDeviceData() async {
-    final PackageInfo packageInfo = await PackageInfo.fromPlatform();
-    DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
-
-    Map<String, dynamic> properties = {
-      'appVersion': packageInfo.version,
-      'buildNumber': packageInfo.buildNumber,
-      'installerStore': packageInfo.installerStore,
-    };
-
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      final AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
-      properties.addAll({
-        'deviceId': androidInfo.id,
-        'brand': androidInfo.brand,
-        'model': androidInfo.model,
-        'manufacturer': androidInfo.manufacturer,
-        'osVersion': androidInfo.version.release,
-      });
-    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
-      final IosDeviceInfo iosDeviceInfo = await deviceInfo.iosInfo;
-      properties.addAll({
-        'deviceId': iosDeviceInfo.identifierForVendor,
-        'brand': iosDeviceInfo.name,
-        'model': iosDeviceInfo.model,
-        'osVersion': iosDeviceInfo.systemVersion,
-      });
-    }
-
-    return properties;
+  void _mutate(OpenpanelState next) {
+    _state = next;
+    unawaited(_preferences.persistState(_state));
   }
 }

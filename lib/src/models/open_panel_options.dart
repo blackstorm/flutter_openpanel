@@ -1,26 +1,18 @@
-/// Openpanel options
-///
-/// This is used to configure Openpanel
+/// Openpanel client configuration.
 class OpenpanelOptions {
-  /// This is the base url of the Openpanel API.
-  /// You may want to change this if you are using a self-hosted version of Openpanel.
-  ///
-  /// Default value is: https://api.openpanel.dev
+  /// API base URL. Defaults to `https://api.openpanel.dev`.
   final String? url;
 
-  /// Your Openpanel client id.
   final String clientId;
-
-  /// Your Openpanel client secret.
   final String? clientSecret;
 
-  /// Enable verbose logging
+  /// When true, failures are printed with `debugPrint`.
   final bool verbose;
 
-  /// Percentage of sessions that will be sampled for tracing (0.0 - 1.0)
+  /// Fraction of installs that emit events (`0.0`–`1.0`).
   final double tracingSampleRate;
 
-  OpenpanelOptions({
+  const OpenpanelOptions({
     this.url,
     required this.clientId,
     this.clientSecret,

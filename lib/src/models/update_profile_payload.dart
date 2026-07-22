@@ -1,6 +1,4 @@
-import 'package:equatable/equatable.dart';
-
-class UpdateProfilePayload extends Equatable {
+class UpdateProfilePayload {
   final String profileId;
   final String? firstName;
   final String? lastName;
@@ -17,29 +15,12 @@ class UpdateProfilePayload extends Equatable {
     this.properties = const {},
   });
 
-  factory UpdateProfilePayload.fromJson(Map<String, dynamic> json) {
-    return UpdateProfilePayload(
-      profileId: json['profileId'],
-      firstName: json['firstName'],
-      lastName: json['lastName'],
-      avatar: json['avatar'],
-      email: json['email'],
-      properties: json['properties'],
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'profileId': profileId,
-      'firstName': firstName,
-      'lastName': lastName,
-      'avatar': avatar,
-      'email': email,
-      'properties': properties,
-    };
-  }
-
-  @override
-  List<Object?> get props =>
-      [profileId, firstName, lastName, avatar, email, properties];
+  Map<String, dynamic> toJson() => {
+        'profileId': profileId,
+        'firstName': firstName,
+        'lastName': lastName,
+        'avatar': avatar,
+        'email': email,
+        'properties': properties,
+      };
 }

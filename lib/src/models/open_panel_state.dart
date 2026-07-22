@@ -1,6 +1,4 @@
-import 'package:equatable/equatable.dart';
-
-class OpenpanelState extends Equatable {
+class OpenpanelState {
   final String? deviceId;
   final String? profileId;
   final bool isCollectionEnabled;
@@ -15,39 +13,36 @@ class OpenpanelState extends Equatable {
     this.isTracingSampled = true,
   });
 
-  @override
-  List<Object?> get props =>
-      [deviceId, profileId, properties, isCollectionEnabled];
-
   factory OpenpanelState.fromJson(Map<String, dynamic> json) {
     return OpenpanelState(
-      deviceId: json['deviceId'],
-      profileId: json['profileId'],
-      properties: json['properties'],
-      isCollectionEnabled: json['isCollectionEnabled'],
-      isTracingSampled: json['isTracingSampled'] ?? true,
+      deviceId: json['deviceId'] as String?,
+      profileId: json['profileId'] as String?,
+      properties: Map<String, dynamic>.from(
+        (json['properties'] as Map?) ?? const {},
+      ),
+      isCollectionEnabled: json['isCollectionEnabled'] as bool? ?? true,
+      isTracingSampled: json['isTracingSampled'] as bool? ?? true,
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'deviceId': deviceId,
-      'profileId': profileId,
-      'properties': properties,
-      'isCollectionEnabled': isCollectionEnabled,
-      'isTracingSampled': isTracingSampled,
-    };
-  }
+  Map<String, dynamic> toJson() => {
+        'deviceId': deviceId,
+        'profileId': profileId,
+        'properties': properties,
+        'isCollectionEnabled': isCollectionEnabled,
+        'isTracingSampled': isTracingSampled,
+      };
 
-  OpenpanelState copyWith(
-      {String? deviceId,
-      String? profileId,
-      Map<String, dynamic>? properties,
-      bool? isCollectionEnabled,
-      bool? isTracingSampled}) {
+  OpenpanelState copyWith({
+    String? deviceId,
+    String? profileId,
+    Map<String, dynamic>? properties,
+    bool? isCollectionEnabled,
+    bool? isTracingSampled,
+  }) {
     return OpenpanelState(
-      profileId: profileId ?? this.profileId,
       deviceId: deviceId ?? this.deviceId,
+      profileId: profileId ?? this.profileId,
       properties: properties ?? this.properties,
       isCollectionEnabled: isCollectionEnabled ?? this.isCollectionEnabled,
       isTracingSampled: isTracingSampled ?? this.isTracingSampled,
