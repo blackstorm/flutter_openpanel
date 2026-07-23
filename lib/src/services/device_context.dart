@@ -1,5 +1,6 @@
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:openpanel_flutter/src/constants/constants.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 /// Single pass over package + device APIs (UA + event properties).
@@ -52,11 +53,12 @@ class DeviceContext {
           case TargetPlatform.iOS:
             final ios = await info.iosInfo;
             platformLabel = 'iOS ${ios.systemVersion}';
+            // Hardware id (iPhone17,5). Never ios.name (user-visible, may be PII).
             model = ios.utsname.machine;
             properties.addAll({
               'deviceId': ios.identifierForVendor,
-              'brand': ios.name,
-              'model': ios.model,
+              'brand': 'Apple',
+              'model': model,
               'osVersion': ios.systemVersion,
             });
           case TargetPlatform.macOS:
@@ -72,11 +74,12 @@ class DeviceContext {
           case TargetPlatform.windows:
             final windows = await info.windowsInfo;
             platformLabel = 'Windows ${windows.displayVersion}';
-            model = windows.computerName;
+            // Avoid computerName / userName — often personal.
+            model = 'Windows';
             properties.addAll({
               'deviceId': windows.deviceId,
               'brand': 'Microsoft',
-              'model': windows.computerName,
+              'model': model,
               'osVersion': windows.displayVersion,
             });
           case TargetPlatform.linux:
@@ -97,9 +100,36 @@ class DeviceContext {
       // Keep package fields; UA falls back below.
     }
 
-    final userAgent =
-        '${package.appName}/${package.version} ($platformLabel; $model; build:${package.buildNumber})';
+    final userAgent = buildUserAgent(
+      platformLabel: platformLabel,
+      model: model,
+    );
 
     return DeviceContext(userAgent: userAgent, properties: properties);
+  }
+
+  /// SDK identity for the HTTP `User-Agent` header (ASCII-safe).
+  ///
+  /// Example: `openpanel-flutter/0.4.0 (iOS 26.3.1; iPhone17,5)`
+  @visibleForTesting
+  static String buildUserAgent({
+    required String platformLabel,
+    required String model,
+    String sdkName = kSdkName,
+    String sdkVersion = kSdkVersion,
+  }) {
+    final raw =
+        '${_asciiHeaderToken(sdkName, fallback: 'openpanel-flutter')}/'
+        '${_asciiHeaderToken(sdkVersion, fallback: '0')} '
+        '(${_asciiHeaderToken(platformLabel, fallback: 'Unknown')}; '
+        '${_asciiHeaderToken(model, fallback: 'Unknown')})';
+    return _asciiHeaderToken(raw, fallback: 'openpanel-flutter/0');
+  }
+
+  static String _asciiHeaderToken(String raw, {required String fallback}) {
+    final cleaned = String.fromCharCodes(
+      raw.codeUnits.where((c) => c == 0x09 || (c >= 0x20 && c <= 0x7e)),
+    ).trim();
+    return cleaned.isEmpty ? fallback : cleaned;
   }
 }

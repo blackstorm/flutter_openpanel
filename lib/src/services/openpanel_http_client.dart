@@ -45,20 +45,11 @@ class OpenpanelHttpClient {
     return Uri.parse('$root/track');
   }
 
-  void updateProfile({
-    required UpdateProfilePayload payload,
-    required Map<String, dynamic> stateProperties,
-  }) {
+  void updateProfile({required UpdateProfilePayload payload}) {
     unawaited(
       _post({
         'type': 'identify',
-        'payload': {
-          ...payload.toJson(),
-          'properties': {
-            ...payload.properties,
-            ...stateProperties,
-          },
-        },
+        'payload': payload.toJson(),
       }),
     );
   }

@@ -33,16 +33,18 @@ class OpenpanelState {
         'isTracingSampled': isTracingSampled,
       };
 
+  /// Use [clearProfileId] to set [profileId] back to null.
   OpenpanelState copyWith({
     String? deviceId,
     String? profileId,
     Map<String, dynamic>? properties,
     bool? isCollectionEnabled,
     bool? isTracingSampled,
+    bool clearProfileId = false,
   }) {
     return OpenpanelState(
       deviceId: deviceId ?? this.deviceId,
-      profileId: profileId ?? this.profileId,
+      profileId: clearProfileId ? null : (profileId ?? this.profileId),
       properties: properties ?? this.properties,
       isCollectionEnabled: isCollectionEnabled ?? this.isCollectionEnabled,
       isTracingSampled: isTracingSampled ?? this.isTracingSampled,

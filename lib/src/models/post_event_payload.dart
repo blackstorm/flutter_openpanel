@@ -13,11 +13,12 @@ class PostEventPayload {
     this.properties = const {},
   });
 
+  /// Omits null ids — anonymous traffic should not send `profileId`.
   Map<String, dynamic> toJson() => {
         'name': name,
         'timestamp': timestamp,
-        'deviceId': deviceId,
-        'profileId': profileId,
+        if (deviceId != null) 'deviceId': deviceId,
+        if (profileId != null) 'profileId': profileId,
         'properties': properties,
       };
 }

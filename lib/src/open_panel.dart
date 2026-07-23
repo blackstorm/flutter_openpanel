@@ -35,20 +35,17 @@ class Openpanel {
     _preferences = PreferencesService(await SharedPreferences.getInstance());
     final saved = _preferences.getSavedState();
     final device = await DeviceContext.collect();
+    final fallbackDeviceId =
+        device.properties['deviceId'] as String? ?? newUuidV4();
+    final deviceProperties = Map<String, dynamic>.from(device.properties);
 
-    if (saved != null) {
-      _state = saved;
-    } else {
-      final rate = options.tracingSampleRate;
-      final sampled = rate >= 1.0 || Random().nextDouble() < rate;
-      _state = OpenpanelState(
-        profileId: newUuidV4(),
-        deviceId: device.properties['deviceId'] as String? ?? newUuidV4(),
-        properties: Map<String, dynamic>.from(device.properties),
-        isTracingSampled: sampled,
-      );
-      await _preferences.persistState(_state);
-    }
+    _state = _restoreState(
+      saved: saved,
+      fallbackDeviceId: fallbackDeviceId,
+      deviceProperties: deviceProperties,
+      tracingSampleRate: options.tracingSampleRate,
+    );
+    await _preferences.persistState(_state);
 
     _http = OpenpanelHttpClient(
       options: options,
@@ -57,6 +54,39 @@ class Openpanel {
 
     WidgetsBinding.instance.addObserver(ReferrerObserver());
     _ready = true;
+  }
+
+  /// Restores device continuity; never restores [OpenpanelState.profileId].
+  ///
+  /// A stale anonymous profileId (≠ deviceId) makes OpenPanel UI show
+  /// "Unknown". The app rebinds identity via [identify] after session load.
+  static OpenpanelState _restoreState({
+    required OpenpanelState? saved,
+    required String fallbackDeviceId,
+    required Map<String, dynamic> deviceProperties,
+    required double tracingSampleRate,
+  }) {
+    if (saved == null) {
+      final sampled =
+          tracingSampleRate >= 1.0 || Random().nextDouble() < tracingSampleRate;
+      return OpenpanelState(
+        deviceId: fallbackDeviceId,
+        properties: deviceProperties,
+        isTracingSampled: sampled,
+      );
+    }
+
+    final savedDeviceId = saved.deviceId?.trim();
+    return OpenpanelState(
+      deviceId: (savedDeviceId != null && savedDeviceId.isNotEmpty)
+          ? savedDeviceId
+          : fallbackDeviceId,
+      properties: saved.properties.isNotEmpty
+          ? Map<String, dynamic>.from(saved.properties)
+          : deviceProperties,
+      isCollectionEnabled: saved.isCollectionEnabled,
+      isTracingSampled: saved.isTracingSampled,
+    );
   }
 
   void setCollectionEnabled(bool enabled) {
@@ -76,18 +106,21 @@ class Openpanel {
     );
   }
 
+  /// Clears identified user; keeps [deviceId] so later events stay anonymous.
   Future<void> clear() async {
-    _state = const OpenpanelState();
+    _state = _state.copyWith(clearProfileId: true);
     await _preferences.persistState(_state);
+  }
+
+  /// Bind events to an internal user id (OpenPanel `identify`).
+  void identify(String profileId) {
+    updateProfile(payload: UpdateProfilePayload(profileId: profileId));
   }
 
   void updateProfile({required UpdateProfilePayload payload}) {
     _run(() {
       setProfileId(payload.profileId);
-      _http.updateProfile(
-        payload: payload,
-        stateProperties: _state.properties,
-      );
+      _http.updateProfile(payload: payload);
     });
   }
 
