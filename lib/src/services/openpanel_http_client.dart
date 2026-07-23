@@ -19,19 +19,19 @@ class OpenpanelHttpClient {
     required String userAgent,
     http.Client? client,
     this.maxAttempts = 3,
-  })  : _client = client ?? http.Client(),
-        _ownsClient = client == null,
-        _verbose = options.verbose,
-        _trackUri = _trackUriFor(options.url),
-        _headers = {
-          'content-type': 'application/json',
-          'openpanel-client-id': options.clientId,
-          'openpanel-sdk-name': kSdkName,
-          'openpanel-sdk-version': kSdkVersion,
-          'User-Agent': userAgent,
-          if (options.clientSecret != null)
-            'openpanel-client-secret': options.clientSecret!,
-        };
+  }) : _client = client ?? http.Client(),
+       _ownsClient = client == null,
+       _verbose = options.verbose,
+       _trackUri = _trackUriFor(options.url),
+       _headers = {
+         'content-type': 'application/json',
+         'openpanel-client-id': options.clientId,
+         'openpanel-sdk-name': kSdkName,
+         'openpanel-sdk-version': kSdkVersion,
+         'User-Agent': userAgent,
+         if (options.clientSecret != null)
+           'openpanel-client-secret': options.clientSecret!,
+       };
 
   final http.Client _client;
   final bool _ownsClient;
@@ -46,12 +46,7 @@ class OpenpanelHttpClient {
   }
 
   void updateProfile({required UpdateProfilePayload payload}) {
-    unawaited(
-      _post({
-        'type': 'identify',
-        'payload': payload.toJson(),
-      }),
-    );
+    unawaited(_post({'type': 'identify', 'payload': payload.toJson()}));
   }
 
   void increment({
@@ -80,11 +75,8 @@ class OpenpanelHttpClient {
     );
   }
 
-  Future<void> event({required PostEventPayload payload}) {
-    return _post({
-      'type': 'track',
-      'payload': payload.toJson(),
-    });
+  Future<bool> event({required PostEventPayload payload}) {
+    return _post({'type': 'track', 'payload': payload.toJson()});
   }
 
   void _mutateProperty({
@@ -105,19 +97,15 @@ class OpenpanelHttpClient {
     );
   }
 
-  Future<void> _post(Map<String, dynamic> body) async {
+  Future<bool> _post(Map<String, dynamic> body) async {
     Object? lastError;
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         final response = await _client
-            .post(
-              _trackUri,
-              headers: _headers,
-              body: jsonEncode(body),
-            )
+            .post(_trackUri, headers: _headers, body: jsonEncode(body))
             .timeout(const Duration(seconds: 10));
         if (response.statusCode >= 200 && response.statusCode < 300) {
-          return;
+          return true;
         }
         lastError = 'HTTP ${response.statusCode}';
       } catch (error) {
@@ -130,6 +118,7 @@ class OpenpanelHttpClient {
     if (_verbose) {
       debugPrint('[openpanel] track failed: $lastError');
     }
+    return false;
   }
 
   void dispose() {

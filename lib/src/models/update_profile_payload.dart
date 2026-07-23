@@ -20,11 +20,11 @@ class UpdateProfilePayload {
   });
 
   Map<String, dynamic> toJson() => {
-        'profileId': profileId,
-        if (firstName != null) 'firstName': firstName,
-        if (lastName != null) 'lastName': lastName,
-        if (avatar != null) 'avatar': avatar,
-        if (email != null) 'email': email,
-        if (properties.isNotEmpty) 'properties': properties,
-      };
+    'profileId': profileId,
+    if (firstName != null) 'firstName': firstName,
+    if (lastName != null) 'lastName': lastName,
+    if (avatar != null) 'avatar': avatar,
+    if (email != null) 'email': email,
+    if (properties.isNotEmpty) 'properties': properties,
+  };
 }

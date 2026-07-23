@@ -22,28 +22,25 @@ void main() {
         );
       });
 
-      await client.event(payload: _payload());
+      expect(await client.event(payload: _payload()), isTrue);
       expect(posts, 1);
       client.dispose();
     });
 
     test('accepts a plain string response body', () async {
       final client = _client((_) async => http.Response('"ok"', 200));
-      await expectLater(client.event(payload: _payload()), completes);
+      expect(await client.event(payload: _payload()), isTrue);
       client.dispose();
     });
 
     test('retries then gives up without throwing', () async {
       var posts = 0;
-      final client = _client(
-        (_) async {
-          posts += 1;
-          return http.Response('nope', 500);
-        },
-        maxAttempts: 3,
-      );
+      final client = _client((_) async {
+        posts += 1;
+        return http.Response('nope', 500);
+      }, maxAttempts: 3);
 
-      await client.event(payload: _payload());
+      expect(await client.event(payload: _payload()), isFalse);
       expect(posts, 3);
       client.dispose();
     });
@@ -63,7 +60,7 @@ void main() {
         }),
       );
 
-      await client.event(payload: _payload());
+      expect(await client.event(payload: _payload()), isTrue);
       expect(posted.toString(), 'http://localhost/api/track');
       client.dispose();
     });
@@ -71,9 +68,9 @@ void main() {
 }
 
 PostEventPayload _payload() => PostEventPayload(
-      name: 'test_event',
-      timestamp: DateTime.utc(2026).toIso8601String(),
-    );
+  name: 'test_event',
+  timestamp: DateTime.utc(2026).toIso8601String(),
+);
 
 OpenpanelHttpClient _client(
   Future<http.Response> Function(http.Request request) handler, {

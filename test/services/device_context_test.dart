@@ -10,12 +10,12 @@ void main() {
         model: 'iPhone17,5',
       );
 
-      expect(
-        ua,
-        '$kSdkName/$kSdkVersion (iOS 26.3.1; iPhone17,5)',
-      );
+      expect(ua, '$kSdkName/$kSdkVersion (iOS 26.3.1; iPhone17,5)');
       expect(ua.startsWith('openpanel-flutter/'), isTrue);
-      expect(ua.codeUnits.every((c) => c == 0x09 || (c >= 0x20 && c <= 0x7e)), isTrue);
+      expect(
+        ua.codeUnits.every((c) => c == 0x09 || (c >= 0x20 && c <= 0x7e)),
+        isTrue,
+      );
     });
 
     test('strips non-ASCII from platform bits', () {

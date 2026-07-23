@@ -5,10 +5,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 /// Single pass over package + device APIs (UA + event properties).
 class DeviceContext {
-  const DeviceContext({
-    required this.userAgent,
-    required this.properties,
-  });
+  const DeviceContext({required this.userAgent, required this.properties});
 
   final String userAgent;
   final Map<String, dynamic> properties;
@@ -44,7 +41,6 @@ class DeviceContext {
             platformLabel = 'Android ${android.version.release}';
             model = android.model;
             properties.addAll({
-              'deviceId': android.id,
               'brand': android.brand,
               'model': android.model,
               'manufacturer': android.manufacturer,
@@ -56,7 +52,6 @@ class DeviceContext {
             // Hardware id (iPhone17,5). Never ios.name (user-visible, may be PII).
             model = ios.utsname.machine;
             properties.addAll({
-              'deviceId': ios.identifierForVendor,
               'brand': 'Apple',
               'model': model,
               'osVersion': ios.systemVersion,
@@ -66,7 +61,6 @@ class DeviceContext {
             platformLabel = 'macOS ${mac.osRelease}';
             model = mac.model;
             properties.addAll({
-              'deviceId': mac.systemGUID,
               'brand': 'Apple',
               'model': mac.model,
               'osVersion': mac.osRelease,
@@ -77,7 +71,6 @@ class DeviceContext {
             // Avoid computerName / userName — often personal.
             model = 'Windows';
             properties.addAll({
-              'deviceId': windows.deviceId,
               'brand': 'Microsoft',
               'model': model,
               'osVersion': windows.displayVersion,
@@ -87,7 +80,6 @@ class DeviceContext {
             platformLabel = 'Linux ${linux.version ?? 'Unknown'}';
             model = linux.name;
             properties.addAll({
-              'deviceId': linux.machineId,
               'brand': linux.name,
               'model': linux.prettyName,
               'osVersion': linux.version,

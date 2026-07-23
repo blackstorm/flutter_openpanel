@@ -3,14 +3,20 @@ import 'package:openpanel_flutter/src/models/open_panel_state.dart';
 
 void main() {
   test('copyWith can clear profileId', () {
-    const state = OpenpanelState(
-      deviceId: 'device-1',
-      profileId: 'user-1',
-    );
+    const state = OpenpanelState(deviceId: 'device-1', profileId: 'user-1');
 
     final cleared = state.copyWith(clearProfileId: true);
 
     expect(cleared.deviceId, 'device-1');
     expect(cleared.profileId, isNull);
+  });
+
+  test('marks state without a privacy marker as a legacy hardware id', () {
+    final state = OpenpanelState.fromJson(const {
+      'deviceId': 'legacy-hardware-id',
+      'properties': <String, dynamic>{},
+    });
+
+    expect(state.deviceIdIsHardware, isTrue);
   });
 }
