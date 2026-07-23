@@ -33,6 +33,28 @@ Future<void> main() async {
 }
 ```
 
+### Custom storage
+
+OpenPanel uses `shared_preferences` by default. To use another backend, provide
+an `OpenpanelStorage` implementation when initializing the SDK:
+
+```dart
+final storage = MyOpenpanelStorage();
+
+await Openpanel.instance.initialize(
+  options: OpenpanelOptions(clientId: '<CLIENT_ID>'),
+  storage: storage,
+  storageKeyPrefix: 'my_app:openpanel', // optional
+);
+```
+
+`OpenpanelStorage` is a string key-value interface. The SDK uses it for its
+state and for its pending-event queue, so an implementation can use platform
+secure storage, a database, or an in-memory store. `storageKeyPrefix` is a
+Redis-style namespace: the default produces `openpanel:state` and
+`openpanel:pending_events_v1`; `my_app:openpanel` produces
+`my_app:openpanel:state` and `my_app:openpanel:pending_events_v1`.
+
 ```dart
 Openpanel.instance.event(name: 'button_clicked', properties: {'id': 'pay'});
 ```

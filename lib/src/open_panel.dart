@@ -9,31 +9,53 @@ import 'package:openpanel_flutter/src/models/post_event_payload.dart';
 import 'package:openpanel_flutter/src/models/update_profile_payload.dart';
 import 'package:openpanel_flutter/src/observers/referrer_observer.dart';
 import 'package:openpanel_flutter/src/services/device_context.dart';
+import 'package:openpanel_flutter/src/services/event_queue.dart';
 import 'package:openpanel_flutter/src/services/openpanel_http_client.dart';
+import 'package:openpanel_flutter/src/services/openpanel_storage.dart';
 import 'package:openpanel_flutter/src/services/preferences_service.dart';
 import 'package:openpanel_flutter/src/utils/uuid.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class Openpanel {
   Openpanel._();
+
+  /// The default namespace for all SDK-owned storage keys.
+  static const defaultStorageKeyPrefix = 'openpanel';
+  static const _stateStorageKeySuffix = 'state';
+  static const _pendingEventsStorageKeySuffix = 'pending_events_v1';
 
   static final Openpanel instance = Openpanel._();
 
   factory Openpanel() => instance;
 
   late final OpenpanelOptions options;
+  late final OpenpanelStorage _storage;
   late final PreferencesService _preferences;
   late final OpenpanelHttpClient _http;
+  late final EventQueue _eventQueue;
 
   bool _ready = false;
   OpenpanelState _state = const OpenpanelState();
+  Future<void> _deliveryTail = Future<void>.value();
 
-  Future<void> initialize({required OpenpanelOptions options}) async {
+  /// Initializes OpenPanel with [storage], or SharedPreferences by default.
+  ///
+  /// [storageKeyPrefix] namespaces persisted SDK state and pending events.
+  /// Keys use Redis-style colon separators and default to the `openpanel`
+  /// namespace.
+  Future<void> initialize({
+    required OpenpanelOptions options,
+    OpenpanelStorage? storage,
+    String storageKeyPrefix = defaultStorageKeyPrefix,
+  }) async {
     if (_ready) return;
     this.options = options;
 
-    _preferences = PreferencesService(await SharedPreferences.getInstance());
-    final saved = _preferences.getSavedState();
+    _storage = storage ?? await SharedPreferencesOpenpanelStorage.create();
+    _preferences = PreferencesService(
+      _storage,
+      storageKey: _storageKey(storageKeyPrefix, _stateStorageKeySuffix),
+    );
+    final saved = await _preferences.getSavedState();
     final device = await DeviceContext.collect();
     final fallbackDeviceId =
         device.properties['deviceId'] as String? ?? newUuidV4();
@@ -47,14 +69,18 @@ class Openpanel {
     );
     await _preferences.persistState(_state);
 
-    _http = OpenpanelHttpClient(
-      options: options,
-      userAgent: device.userAgent,
+    _http = OpenpanelHttpClient(options: options, userAgent: device.userAgent);
+    _eventQueue = EventQueue(
+      _storage,
+      storageKey: _storageKey(storageKeyPrefix, _pendingEventsStorageKeySuffix),
     );
 
     WidgetsBinding.instance.addObserver(ReferrerObserver());
     _ready = true;
+    unawaited(_enqueueDelivery(() async => _flushPendingEvents()));
   }
+
+  static String _storageKey(String prefix, String suffix) => '$prefix:$suffix';
 
   /// Restores device continuity; never restores [OpenpanelState.profileId].
   ///
@@ -77,12 +103,20 @@ class Openpanel {
     }
 
     final savedDeviceId = saved.deviceId?.trim();
+    final reusesPseudonymousDeviceId =
+        !saved.deviceIdIsHardware &&
+        savedDeviceId != null &&
+        savedDeviceId.isNotEmpty;
+    final savedProperties = Map<String, dynamic>.from(saved.properties)
+      // These keys were produced by older SDK builds. Do not keep forwarding a
+      // hardware identifier or an opaque install-referrer URL after upgrade.
+      ..remove('deviceId')
+      ..remove('__referrer');
     return OpenpanelState(
-      deviceId: (savedDeviceId != null && savedDeviceId.isNotEmpty)
-          ? savedDeviceId
-          : fallbackDeviceId,
-      properties: saved.properties.isNotEmpty
-          ? Map<String, dynamic>.from(saved.properties)
+      deviceId: reusesPseudonymousDeviceId ? savedDeviceId : fallbackDeviceId,
+      deviceIdIsHardware: false,
+      properties: savedProperties.isNotEmpty
+          ? savedProperties
           : deviceProperties,
       isCollectionEnabled: saved.isCollectionEnabled,
       isTracingSampled: saved.isTracingSampled,
@@ -98,12 +132,7 @@ class Openpanel {
   }
 
   void setGlobalProperties(Map<String, dynamic> properties) {
-    _mutate(
-      _state.copyWith(properties: {
-        ..._state.properties,
-        ...properties,
-      }),
-    );
+    _mutate(_state.copyWith(properties: {..._state.properties, ...properties}));
   }
 
   /// Clears identified user; keeps [deviceId] so later events stay anonymous.
@@ -155,36 +184,55 @@ class Openpanel {
     Map<String, dynamic> properties = const {},
   }) {
     _run(() {
-      final profileId =
-          properties['profileId'] as String? ?? _state.profileId;
+      final profileId = properties['profileId'] as String? ?? _state.profileId;
       final eventProperties = Map<String, dynamic>.from(properties)
         ..remove('profileId');
 
       unawaited(
-        _track(
-          PostEventPayload(
-            name: name,
-            timestamp: DateTime.timestamp().toIso8601String(),
-            deviceId: _state.deviceId,
-            profileId: profileId,
-            properties: {
-              ..._state.properties,
-              ...eventProperties,
-            },
+        _enqueueDelivery(
+          () => _deliver(
+            PostEventPayload(
+              name: name,
+              timestamp: DateTime.timestamp().toIso8601String(),
+              deviceId: _state.deviceId,
+              profileId: profileId,
+              properties: {..._state.properties, ...eventProperties},
+            ),
           ),
         ),
       );
     });
   }
 
-  Future<void> _track(PostEventPayload payload) async {
-    try {
-      await _http.event(payload: payload);
-    } catch (error, stack) {
+  Future<void> _enqueueDelivery(Future<void> Function() operation) {
+    _deliveryTail = _deliveryTail.then((_) => operation()).catchError((
+      error,
+      stack,
+    ) {
       if (options.verbose) {
-        debugPrint('[openpanel] track failed: $error\n$stack');
+        debugPrint('[openpanel] queued delivery failed: $error\n$stack');
       }
+    });
+    return _deliveryTail;
+  }
+
+  Future<void> _deliver(PostEventPayload payload) async {
+    if (!await _flushPendingEvents()) {
+      await _eventQueue.enqueue(payload);
+      return;
     }
+    if (!await _http.event(payload: payload)) {
+      await _eventQueue.enqueue(payload);
+    }
+  }
+
+  Future<bool> _flushPendingEvents() async {
+    final pending = await _eventQueue.read();
+    for (var index = 0; index < pending.length; index++) {
+      if (!await _http.event(payload: pending[index])) return false;
+      await _eventQueue.replace(pending.sublist(index + 1));
+    }
+    return true;
   }
 
   void _adjustProperty({
@@ -195,7 +243,8 @@ class Openpanel {
       required String profileId,
       required String property,
       required int value,
-    }) send,
+    })
+    send,
   }) {
     _run(() {
       final profileId = eventOptions?.profileId ?? _state.profileId;

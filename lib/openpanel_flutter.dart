@@ -4,3 +4,4 @@ export 'src/models/update_profile_payload.dart';
 export 'src/observers/referrer_observer.dart';
 export 'src/observers/route_observer.dart';
 export 'src/open_panel.dart';
+export 'src/services/openpanel_storage.dart';
